@@ -1,0 +1,12 @@
+version: "3"
+services:
+  warp:
+    image: ghcr.io/trunkszi/cloudflare-warp:latest
+    ports:
+      - 40000:40000
+    restart: always
+    environment:
+      - "WARP_LICENSE="
+      - "FAMILIES_MODE=off"
+    volumes:
+      - ./warp:/var/lib/cloudflare-warp

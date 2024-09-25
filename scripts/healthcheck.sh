@@ -6,7 +6,7 @@ trap 'kill ${sleep_pid}; exit 0' SIGTERM SIGINT
 # Main loop
 while true; do
   # Check if the Cloudflare WARP service is working
-  if ! curl --retry 8 -m 15 -sSLx socks5h://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace/ | grep -qE "warp=(on|plus)" &>/dev/null; then
+  if ! curl --retry 8 -m 45 -sSLx socks5h://127.0.0.1:40000 https://www.cloudflare.com/cdn-cgi/trace/ | grep -qE "warp=(on|plus)" &>/dev/null; then
     # Restart the warp-svc service if WARP is not working
     echo "WARP service is not working. Restarted warp-svc."
     supervisorctl restart warp-svc

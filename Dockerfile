@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:latest
 ENV WARP_LICENSE=
 ENV FAMILIES_MODE=off
 EXPOSE 40000/tcp

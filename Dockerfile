@@ -1,6 +1,5 @@
-FROM ubuntu:latest
+FROM ubuntu:24.04
 ENV WARP_LICENSE=
-ENV FAMILIES_MODE=off
 EXPOSE 40000/tcp
 RUN apt-get update && \
   apt-get install sudo curl gpg lsb-release supervisor logrotate -y && \
@@ -12,5 +11,6 @@ RUN apt-get update && \
 COPY --chmod=755 scripts /scripts
 COPY --chmod=644 configs/logrotate.conf /etc/logrotate.conf
 COPY --chmod=644 configs/supervisord.conf /etc/supervisor/supervisord.conf
+HEALTHCHECK --interval=30s --timeout=15s --start-period=15m --retries=3 CMD ["/scripts/healthcheck.sh", "--once"]
 VOLUME ["/var/lib/cloudflare-warp"]
 CMD ["/usr/bin/supervisord"]

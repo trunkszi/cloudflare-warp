@@ -7,21 +7,19 @@ The official Cloudflare WARP client for Linux only listens on localhost for the 
 
 ## Features
 * Register a new Cloudflare WARP account
-* Configurable "families mode"
 * Subscribe to Cloudflare WARP+
 
 ## How to use
 The socks proxy in exposed on port `40000`
 
 You can use these environment variables:
-* `FAMILIES_MODE`: Use one of `off`, `malware` and `full` values. (Default: `off`)
 * `WARP_LICENSE`: Put your WARP+ licesne.
 
 You should mount `/var/lib/cloudflare-warp` directory of the container to your host to make you WARP account persistant. Notice that each WARP+ license is working only on 4 device so persisting the configuration is important!
 
 ### Using as a local proxy with Docker
 ```
-docker run -d --name=warp --network host --restart=always -e FAMILIES_MODE=off -e WARP_LICENSE=xxxxxxxx-xxxxxxxx-xxxxxxxx -v ${PWD}/warp:/var/lib/cloudflare-warp ghcr.io/trunkszi/cloudflare-warp:latest
+docker run -d --name=warp --network host --restart=always -e WARP_LICENSE=xxxxxxxx-xxxxxxxx-xxxxxxxx -v ${PWD}/warp:/var/lib/cloudflare-warp ghcr.io/trunkszi/cloudflare-warp:latest
 ```
 You can verify warp by visiting this url:
 ```
@@ -48,7 +46,6 @@ services:
     restart: always
     environment:
       WARP_LICENSE: xxxxxxxx-xxxxxxxx-xxxxxxxx
-      FAMILIES_MODE: off
     volumes:
     - ./warp:/var/lib/cloudflare-warp
   app:
@@ -58,4 +55,3 @@ services:
     environment:
       proxy: warp:40000
 ```
-

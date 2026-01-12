@@ -3,82 +3,110 @@
 set -e
 
 # Kill any existing instances of warp-svc before starting a new one
-if pkill -x warp-svc -9; then
+if pkill -9 -x warp-svc >/dev/null 2>&1; then
     echo "Existing warp-svc process killed."
 fi
 
-if ! cp -f /scripts/mdm.xml /var/lib/cloudflare-warp/mdm.xml;then
-    echo "Unable to start with masque protocol."
-fi
-
 # Start warp-svc in the background and redirect output to exclude dbus messages
-warp-svc > >(grep -ivE "(dbus|DEBUG|INFO|WARN)") 2 > >(grep -ivE "(dbus|DEBUG|INFO|WARN)" >&2) &
+warp-svc > >(grep -ivE "(dbus|DEBUG|INFO|WARN)") 2> >(grep -ivE "(dbus|DEBUG|INFO|WARN)" >&2) &
 
 WARP_PID=$!
 
 # Trap SIGTERM and SIGINT, and forward those signals to the warp-svc process
 trap "echo 'Stopping warp-svc...'; kill -TERM $WARP_PID; exit" SIGTERM SIGINT
 
-# Maximum number of attempts to try the registration
-MAX_ATTEMPTS=5
-attempt_counter=0
+retry_warp_cli() {
+    local description="$1"
+    shift
 
-echo "Attempting to start warp-svc and register..."
-
-# Function to check service status and attempt registration
-function attempt_registration {
-    until warp-cli --accept-tos registration new &>/dev/null; do
-        echo "Wait for warp-svc to start... Attempt $((++attempt_counter)) of $MAX_ATTEMPTS"
-        sleep 1
-        if [[ $attempt_counter -ge $MAX_ATTEMPTS ]]; then
-            echo "Failed to register after $MAX_ATTEMPTS attempts. Exiting."
-            return 1
+    local attempt=0
+    local max_attempts=12
+    while true; do
+        if warp-cli --accept-tos "$@" >/dev/null 2>&1; then
+            echo "${description} OK."
+            return 0
         fi
+
+        attempt=$((attempt + 1))
+        if [[ "${attempt}" -ge "${max_attempts}" ]]; then
+            echo "${description} failed after ${max_attempts} attempts. Continuing..."
+            return 0
+        fi
+
+        sleep 5
     done
-    echo "warp-svc has been started and registered successfully!"
 }
 
-# Call the registration function
-if attempt_registration; then
-    echo "Service started and registered successfully."
-else
-    echo "There was an issue starting the service or registering. Check logs for details."
-    kill $WARP_PID
-    exit 1
-fi
+echo "Ensuring WARP registration..."
+registration_last_log_epoch=0
+while true; do
+    registration_output=""
+    if registration_output="$(warp-cli --accept-tos registration new 2>&1)"; then
+        echo "Registration ensured."
+        break
+    fi
+
+    if echo "${registration_output}" | grep -qiE "already.*registered|existing.*registration|registration.*exists"; then
+        echo "Already registered."
+        break
+    fi
+
+    now_epoch="$(date +%s)"
+    if (( now_epoch - registration_last_log_epoch >= 30 )); then
+        echo "Waiting for warp-svc/warp-cli to be ready for registration..."
+        registration_last_log_epoch="${now_epoch}"
+    fi
+    sleep 5
+done
 
 # Set the proxy port to 40000
-warp-cli --accept-tos proxy port 40000
+retry_warp_cli "Set proxy port" proxy port 40000
 
 # Set the mode to proxy
-warp-cli --accept-tos mode proxy
+retry_warp_cli "Set mode to proxy" mode proxy
 
 # Disable DNS log
-warp-cli --accept-tos dns log disable
-
-# Set the families mode based on the value of the FAMILIES_MODE variable
-warp-cli --accept-tos dns families "${FAMILIES_MODE}"
+retry_warp_cli "Disable DNS log" dns log disable
 
 # Set the WARP_LICENSE if it is not empty
 if [[ -n $WARP_LICENSE ]]; then
-    warp-cli --accept-tos registration license "${WARP_LICENSE}"
+    retry_warp_cli "Apply WARP+ license" registration license "${WARP_LICENSE}"
+fi
+
+# Configure tunnel protocol to MASQUE (best-effort; command availability can vary by client version)
+if warp-cli --accept-tos tunnel protocol set MASQUE >/dev/null 2>&1; then
+    echo "Tunnel protocol set to MASQUE."
+else
+    echo "Failed to set tunnel protocol to MASQUE. Continuing..."
+fi
+
+if warp-cli --accept-tos tunnel masque-options set h3-with-h2-fallback >/dev/null 2>&1; then
+    echo "MASQUE options set to h3-with-h2-fallback."
+else
+    echo "Failed to set MASQUE options. Continuing..."
 fi
 
 # Connect to the WARP service
-warp-cli --accept-tos connect
-
+connect_last_attempt_epoch=0
+connect_last_log_epoch=0
 while true; do
-    # Check if warp-cli is connected
-    if warp-cli --accept-tos status | grep -iq connected; then
+    if warp-cli --accept-tos status 2>/dev/null | grep -iq connected; then
         echo "Connected successfully."
-        # If connected, start healthcheck and break the loop
-        supervisorctl start healthcheck
         break
-    else
-        echo "Not connected. Checking again..."
     fi
-    # Wait for a specified time before checking again
-    sleep 1
+
+    now_epoch="$(date +%s)"
+    if (( now_epoch - connect_last_attempt_epoch >= 30 )); then
+        warp-cli --accept-tos connect >/dev/null 2>&1 || true
+        connect_last_attempt_epoch="${now_epoch}"
+    fi
+
+    if (( now_epoch - connect_last_log_epoch >= 30 )); then
+        echo "Waiting for connection..."
+        connect_last_log_epoch="${now_epoch}"
+    fi
+
+    sleep 5
 done
 
 # Wait for warp-svc process to finish

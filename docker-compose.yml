@@ -1,0 +1,11 @@
+services:
+  warp:
+    image: ghcr.io/trunkszi/cloudflare-warp:latest
+    ports:
+      - "40000:40000"
+    restart: always
+    volumes:
+      - warp-data:/var/lib/cloudflare-warp
+
+volumes:
+  warp-data:
